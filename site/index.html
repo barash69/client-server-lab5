@@ -3,87 +3,239 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Список задач</title>
+    <title>Менеджер задач</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 60px auto;
-            padding: 20px;
-            background: #f5f5f5;
+            background: #f3f4f6;
+            margin: 0;
+            padding: 40px 15px;
+            color: #222;
         }
+
         .container {
+            max-width: 650px;
+            margin: auto;
             background: white;
-            padding: 25px;
-            border-radius: 12px;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px #00000012;
         }
-        input {
-            padding: 10px;
-            width: 65%;
+
+        h1 { margin-top: 0; }
+
+        form {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
         }
+
+        input[type="text"] {
+            flex: 1;
+            min-width: 0;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+
         button {
-            padding: 10px 15px;
+            padding: 10px 14px;
+            border: none;
+            border-radius: 8px;
             cursor: pointer;
+            background: #2563eb;
+            color: white;
         }
+
+        button:hover { opacity: 0.85; }
+
+        ul {
+            padding: 0;
+            list-style: none;
+        }
+
         li {
-            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .task-title {
+            flex: 1;
+            overflow-wrap: anywhere;
+        }
+
+        .completed {
+            text-decoration: line-through;
+            color: #888;
+        }
+
+        .delete { background: #dc2626; }
+        .edit { background: #64748b; }
+
+        .error {
+            color: #dc2626;
+            margin-bottom: 15px;
+        }
+
+        @media (max-width: 500px) {
+            li { flex-wrap: wrap; }
+            .task-title { min-width: 70%; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Мой список задач</h1>
+<div class="container">
+    <h1>Менеджер задач</h1>
 
-        <form id="taskForm">
-            <input type="text" id="taskInput"
-                   placeholder="Введите задачу" required>
-            <button type="submit">Добавить</button>
-        </form>
+    <form id="taskForm">
+        <input type="text" id="taskInput"
+               placeholder="Введите новую задачу"
+               maxlength="200" required>
+        <button type="submit">Добавить</button>
+    </form>
 
-        <h2>Задачи:</h2>
-        <ul id="taskList"></ul>
-    </div>
+    <p id="error" class="error" role="alert"></p>
 
-    <script>
-        async function loadTasks() {
-            const response = await fetch('/api/tasks');
-            const tasks = await response.json();
+    <h2>Список задач</h2>
+    <ul id="taskList"></ul>
+</div>
 
-            const list = document.getElementById('taskList');
-            list.innerHTML = '';
+<script>
+    const taskList = document.getElementById("taskList");
+    const taskInput = document.getElementById("taskInput");
+    const errorBox = document.getElementById("error");
 
-            tasks.forEach(task => {
-                const li = document.createElement('li');
-                li.textContent = task.title;
-                list.appendChild(li);
-            });
+    function showError(message) {
+        errorBox.textContent = message;
+    }
+
+    async function apiRequest(url, options = {}) {
+        const response = await fetch(url, options);
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || "Ошибка сервера");
         }
 
-        document.getElementById('taskForm')
-            .addEventListener('submit', async function(event) {
-                event.preventDefault();
+        return data;
+    }
 
-                const input = document.getElementById('taskInput');
+    async function loadTasks() {
+        try {
+            const tasks = await apiRequest("/api/tasks");
+            taskList.innerHTML = "";
 
-                const response = await fetch('/api/tasks', {
-                    method: 'POST',
+            tasks.forEach(task => {
+                const li = document.createElement("li");
+
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = task.completed;
+                checkbox.title = "Выполнено";
+
+                const title = document.createElement("span");
+                title.textContent = task.title;
+                title.className = "task-title";
+
+                if (task.completed) {
+                    title.classList.add("completed");
+                }
+
+                const editButton = document.createElement("button");
+                editButton.textContent = "Изменить";
+                editButton.className = "edit";
+
+                const deleteButton = document.createElement("button");
+                deleteButton.textContent = "Удалить";
+                deleteButton.className = "delete";
+
+                checkbox.addEventListener("change", async () => {
+                    await updateTask(task.id, {
+                        completed: checkbox.checked
+                    });
+                });
+
+                editButton.addEventListener("click", async () => {
+                    const newTitle = prompt(
+                        "Новое название задачи:", task.title
+                    );
+
+                    if (newTitle === null) return;
+
+                    await updateTask(task.id, {
+                        title: newTitle
+                    });
+                });
+
+                deleteButton.addEventListener("click", async () => {
+                    if (!confirm("Удалить задачу?")) return;
+
+                    try {
+                        showError("");
+                        await apiRequest("/api/tasks/" + task.id, {
+                            method: "DELETE"
+                        });
+                        await loadTasks();
+                    } catch (error) {
+                        showError(error.message);
+                    }
+                });
+
+                li.append(checkbox, title, editButton, deleteButton);
+                taskList.appendChild(li);
+            });
+        } catch (error) {
+            showError(error.message);
+        }
+    }
+
+    async function updateTask(id, data) {
+        try {
+            showError("");
+
+            await apiRequest("/api/tasks/" + id, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(data)
+            });
+
+            await loadTasks();
+        } catch (error) {
+            showError(error.message);
+            await loadTasks();
+        }
+    }
+
+    document.getElementById("taskForm")
+        .addEventListener("submit", async event => {
+            event.preventDefault();
+
+            try {
+                showError("");
+
+                await apiRequest("/api/tasks", {
+                    method: "POST",
                     headers: {
-                        'Content-Type': 'application/json'
+                        "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        title: input.value
+                        title: taskInput.value
                     })
                 });
 
-                if (response.ok) {
-                    input.value = '';
-                    loadTasks();
-                } else {
-                    alert('Не удалось добавить задачу');
-                }
-            });
+                taskInput.value = "";
+                await loadTasks();
+            } catch (error) {
+                showError(error.message);
+            }
+        });
 
-        loadTasks();
-    </script>
+    loadTasks();
+</script>
 </body>
 </html>
