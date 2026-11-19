@@ -39,30 +39,69 @@ def health():
 def get_tasks():
     q = request.args.get("q", "").strip()
     status = request.args.get("status", "all")
+    page_value = request.args.get("page", "1")
+    limit_value = request.args.get("limit", "10")
 
     if status not in ("all", "active", "completed"):
         return error("Некорректный статус задачи")
 
-    sql = "SELECT * FROM tasks WHERE 1=1"
+    try:
+        page = int(page_value)
+        limit = int(limit_value)
+    except ValueError:
+        return error("page и limit должны быть целыми числами")
+
+    if page < 1:
+        return error("page должен быть не меньше 1")
+
+    if not 1 <= limit <= 50:
+        return error("limit должен быть от 1 до 50")
+
+    conditions = []
     params = []
 
     if q:
-        sql += " AND instr(UNICODE_CASEFOLD(title), ?) > 0"
+        conditions.append(
+            "instr(UNICODE_CASEFOLD(title), ?) > 0"
+        )
         params.append(q.casefold())
 
     if status == "active":
-        sql += " AND completed = ?"
+        conditions.append("completed = ?")
         params.append(0)
     elif status == "completed":
-        sql += " AND completed = ?"
+        conditions.append("completed = ?")
         params.append(1)
 
-    sql += " ORDER BY created_at DESC, id DESC"
+    where_sql = (
+        " WHERE " + " AND ".join(conditions)
+        if conditions else ""
+    )
 
     with get_db() as conn:
-        rows = conn.execute(sql, params).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*) FROM tasks" + where_sql,
+            params
+        ).fetchone()[0]
 
-    return jsonify([task_to_dict(row) for row in rows])
+        offset = (page - 1) * limit
+
+        rows = conn.execute(
+            "SELECT * FROM tasks" + where_sql +
+            " ORDER BY created_at DESC, id DESC"
+            " LIMIT ? OFFSET ?",
+            params + [limit, offset]
+        ).fetchall()
+
+    total_pages = (total + limit - 1) // limit
+
+    return jsonify({
+        "items": [task_to_dict(row) for row in rows],
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "total_pages": total_pages
+    })
 
 
 @app.route("/api/tasks", methods=["POST"])
@@ -92,12 +131,9 @@ def add_task():
             "INSERT INTO tasks (title, completed) VALUES (?, ?)",
             (title, int(completed))
         )
-
-        task_id = cursor.lastrowid
-
         row = conn.execute(
             "SELECT * FROM tasks WHERE id = ?",
-            (task_id,)
+            (cursor.lastrowid,)
         ).fetchone()
 
     return jsonify(task_to_dict(row)), 201
@@ -138,7 +174,6 @@ def update_task(task_id):
                 return error(
                     "Поле completed должно быть логическим"
                 )
-
             completed = data["completed"]
 
         conn.execute(
