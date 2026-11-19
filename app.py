@@ -8,6 +8,12 @@ DB = "/home/vlad/lab5/tasks.db"
 def get_db():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
+    conn.create_function(
+        "UNICODE_CASEFOLD",
+        1,
+        lambda s: s.casefold() if s is not None else "",
+        deterministic=True
+    )
     return conn
 
 
@@ -24,24 +30,41 @@ def task_to_dict(row):
     }
 
 
-# Проверка состояния сервера
 @app.route("/apihealth", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
 
 
-# Получение списка задач
 @app.route("/api/tasks", methods=["GET"])
 def get_tasks():
+    q = request.args.get("q", "").strip()
+    status = request.args.get("status", "all")
+
+    if status not in ("all", "active", "completed"):
+        return error("Некорректный статус задачи")
+
+    sql = "SELECT * FROM tasks WHERE 1=1"
+    params = []
+
+    if q:
+        sql += " AND instr(UNICODE_CASEFOLD(title), ?) > 0"
+        params.append(q.casefold())
+
+    if status == "active":
+        sql += " AND completed = ?"
+        params.append(0)
+    elif status == "completed":
+        sql += " AND completed = ?"
+        params.append(1)
+
+    sql += " ORDER BY created_at DESC, id DESC"
+
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM tasks ORDER BY id"
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
 
     return jsonify([task_to_dict(row) for row in rows])
 
 
-# Добавление задачи
 @app.route("/api/tasks", methods=["POST"])
 def add_task():
     data = request.get_json(silent=True)
@@ -69,15 +92,17 @@ def add_task():
             "INSERT INTO tasks (title, completed) VALUES (?, ?)",
             (title, int(completed))
         )
+
         task_id = cursor.lastrowid
+
         row = conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            "SELECT * FROM tasks WHERE id = ?",
+            (task_id,)
         ).fetchone()
 
     return jsonify(task_to_dict(row)), 201
 
 
-# Редактирование задачи
 @app.route("/api/tasks/<int:task_id>", methods=["PATCH"])
 def update_task(task_id):
     data = request.get_json(silent=True)
@@ -87,7 +112,8 @@ def update_task(task_id):
 
     with get_db() as conn:
         row = conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            "SELECT * FROM tasks WHERE id = ?",
+            (task_id,)
         ).fetchone()
 
         if row is None:
@@ -103,11 +129,15 @@ def update_task(task_id):
             title = data["title"].strip()
 
             if not 1 <= len(title) <= 200:
-                return error("Название должно содержать от 1 до 200 символов")
+                return error(
+                    "Название должно содержать от 1 до 200 символов"
+                )
 
         if "completed" in data:
             if not isinstance(data["completed"], bool):
-                return error("Поле completed должно быть логическим")
+                return error(
+                    "Поле completed должно быть логическим"
+                )
 
             completed = data["completed"]
 
@@ -117,18 +147,19 @@ def update_task(task_id):
         )
 
         updated = conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            "SELECT * FROM tasks WHERE id = ?",
+            (task_id,)
         ).fetchone()
 
     return jsonify(task_to_dict(updated))
 
 
-# Удаление задачи
 @app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
 def delete_task(task_id):
     with get_db() as conn:
         cursor = conn.execute(
-            "DELETE FROM tasks WHERE id = ?", (task_id,)
+            "DELETE FROM tasks WHERE id = ?",
+            (task_id,)
         )
 
         if cursor.rowcount == 0:

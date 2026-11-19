@@ -14,7 +14,7 @@
         }
 
         .container {
-            max-width: 650px;
+            max-width: 700px;
             margin: auto;
             background: white;
             padding: 30px;
@@ -24,18 +24,20 @@
 
         h1 { margin-top: 0; }
 
-        form {
+        form, .filters {
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
-        input[type="text"] {
+        input[type="text"], select {
             flex: 1;
-            min-width: 0;
+            min-width: 130px;
             padding: 12px;
             border: 1px solid #ccc;
             border-radius: 8px;
+            font-size: 14px;
         }
 
         button {
@@ -80,6 +82,12 @@
             margin-bottom: 15px;
         }
 
+        .empty {
+            color: #888;
+            text-align: center;
+            padding: 20px;
+        }
+
         @media (max-width: 500px) {
             li { flex-wrap: wrap; }
             .task-title { min-width: 70%; }
@@ -97,16 +105,42 @@
         <button type="submit">Добавить</button>
     </form>
 
+    <h2>Поиск и фильтрация</h2>
+
+    <div class="filters">
+        <input type="text" id="searchInput"
+               placeholder="Поиск по названию">
+
+        <select id="statusFilter">
+            <option value="all">Все задачи</option>
+            <option value="active">Активные</option>
+            <option value="completed">Выполненные</option>
+        </select>
+
+        <button type="button" id="applyButton">
+            Применить
+        </button>
+    </div>
+
     <p id="error" class="error" role="alert"></p>
 
     <h2>Список задач</h2>
     <ul id="taskList"></ul>
+    <p id="emptyMessage" class="empty" hidden>
+        Задачи не найдены
+    </p>
 </div>
 
 <script>
     const taskList = document.getElementById("taskList");
     const taskInput = document.getElementById("taskInput");
+    const searchInput = document.getElementById("searchInput");
+    const statusFilter = document.getElementById("statusFilter");
     const errorBox = document.getElementById("error");
+    const emptyMessage = document.getElementById("emptyMessage");
+
+    let currentQuery = "";
+    let currentStatus = "all";
 
     function showError(message) {
         errorBox.textContent = message;
@@ -125,8 +159,19 @@
 
     async function loadTasks() {
         try {
-            const tasks = await apiRequest("/api/tasks");
+            showError("");
+
+            const params = new URLSearchParams({
+                q: currentQuery,
+                status: currentStatus
+            });
+
+            const tasks = await apiRequest(
+                "/api/tasks?" + params.toString()
+            );
+
             taskList.innerHTML = "";
+            emptyMessage.hidden = tasks.length !== 0;
 
             tasks.forEach(task => {
                 const li = document.createElement("li");
@@ -134,7 +179,6 @@
                 const checkbox = document.createElement("input");
                 checkbox.type = "checkbox";
                 checkbox.checked = task.completed;
-                checkbox.title = "Выполнено";
 
                 const title = document.createElement("span");
                 title.textContent = task.title;
@@ -160,7 +204,8 @@
 
                 editButton.addEventListener("click", async () => {
                     const newTitle = prompt(
-                        "Новое название задачи:", task.title
+                        "Новое название задачи:",
+                        task.title
                     );
 
                     if (newTitle === null) return;
@@ -174,19 +219,26 @@
                     if (!confirm("Удалить задачу?")) return;
 
                     try {
-                        showError("");
                         await apiRequest("/api/tasks/" + task.id, {
                             method: "DELETE"
                         });
+
                         await loadTasks();
                     } catch (error) {
                         showError(error.message);
                     }
                 });
 
-                li.append(checkbox, title, editButton, deleteButton);
+                li.append(
+                    checkbox,
+                    title,
+                    editButton,
+                    deleteButton
+                );
+
                 taskList.appendChild(li);
             });
+
         } catch (error) {
             showError(error.message);
         }
@@ -194,8 +246,6 @@
 
     async function updateTask(id, data) {
         try {
-            showError("");
-
             await apiRequest("/api/tasks/" + id, {
                 method: "PATCH",
                 headers: {
@@ -216,8 +266,6 @@
             event.preventDefault();
 
             try {
-                showError("");
-
                 await apiRequest("/api/tasks", {
                     method: "POST",
                     headers: {
@@ -233,6 +281,13 @@
             } catch (error) {
                 showError(error.message);
             }
+        });
+
+    document.getElementById("applyButton")
+        .addEventListener("click", () => {
+            currentQuery = searchInput.value.trim();
+            currentStatus = statusFilter.value;
+            loadTasks();
         });
 
     loadTasks();
