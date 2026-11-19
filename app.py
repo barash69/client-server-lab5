@@ -34,6 +34,31 @@ def task_to_dict(row):
 def health():
     return jsonify({"status": "ok"})
 
+@app.route("/api/tasks/stats", methods=["GET"])
+def task_stats():
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT
+                COUNT(*) AS total,
+                COALESCE(SUM(completed), 0) AS completed
+            FROM tasks
+        """).fetchone()
+
+    total = row["total"]
+    completed = row["completed"]
+    active = total - completed
+
+    completion_percent = (
+        (completed * 100 + total // 2) // total
+        if total > 0 else 0
+    )
+
+    return jsonify({
+        "total": total,
+        "completed": completed,
+        "active": active,
+        "completion_percent": completion_percent
+    })
 
 @app.route("/api/tasks", methods=["GET"])
 def get_tasks():

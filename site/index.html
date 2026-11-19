@@ -50,13 +50,37 @@
             color: white;
         }
 
-        button:hover:not(:disabled) {
-            opacity: 0.85;
-        }
+        button:hover:not(:disabled) { opacity: 0.85; }
 
         button:disabled {
             background: #cbd5e1;
             cursor: not-allowed;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .stat {
+            background: #eff6ff;
+            border-radius: 10px;
+            padding: 15px 8px;
+            text-align: center;
+        }
+
+        .stat strong {
+            display: block;
+            font-size: 24px;
+            color: #2563eb;
+        }
+
+        .stat span {
+            display: block;
+            font-size: 13px;
+            margin-top: 5px;
         }
 
         ul {
@@ -84,7 +108,6 @@
 
         .delete { background: #dc2626; }
         .edit { background: #64748b; }
-
         .error { color: #dc2626; }
 
         .empty {
@@ -104,6 +127,7 @@
         }
 
         @media (max-width: 500px) {
+            .stats { grid-template-columns: repeat(2, 1fr); }
             li { flex-wrap: wrap; }
             .task-title { min-width: 70%; }
         }
@@ -119,6 +143,25 @@
                maxlength="200" required>
         <button type="submit">Добавить</button>
     </form>
+
+    <div class="stats">
+        <div class="stat">
+            <strong id="statTotal">0</strong>
+            <span>Всего</span>
+        </div>
+        <div class="stat">
+            <strong id="statCompleted">0</strong>
+            <span>Выполнено</span>
+        </div>
+        <div class="stat">
+            <strong id="statActive">0</strong>
+            <span>Осталось</span>
+        </div>
+        <div class="stat">
+            <strong id="statPercent">0%</strong>
+            <span>Выполнение</span>
+        </div>
+    </div>
 
     <h2>Поиск и фильтрация</h2>
 
@@ -193,6 +236,27 @@
         return data;
     }
 
+    async function loadStats() {
+        try {
+            const stats = await apiRequest("/api/tasks/stats");
+
+            document.getElementById("statTotal").textContent =
+                stats.total;
+
+            document.getElementById("statCompleted").textContent =
+                stats.completed;
+
+            document.getElementById("statActive").textContent =
+                stats.active;
+
+            document.getElementById("statPercent").textContent =
+                stats.completion_percent + "%";
+
+        } catch (error) {
+            showError(error.message);
+        }
+    }
+
     async function loadTasks() {
         try {
             showError("");
@@ -220,7 +284,6 @@
 
             totalPages = data.total_pages;
             taskList.innerHTML = "";
-
             emptyMessage.hidden = data.items.length !== 0;
 
             data.items.forEach(task => {
@@ -274,6 +337,7 @@
                         });
 
                         await loadTasks();
+                        await loadStats();
                     } catch (error) {
                         showError(error.message);
                     }
@@ -314,6 +378,7 @@
             });
 
             await loadTasks();
+            await loadStats();
         } catch (error) {
             showError(error.message);
         }
@@ -336,6 +401,7 @@
 
                 taskInput.value = "";
                 await loadTasks();
+                await loadStats();
             } catch (error) {
                 showError(error.message);
             }
@@ -370,6 +436,7 @@
     });
 
     loadTasks();
+    loadStats();
 </script>
 </body>
 </html>
